@@ -1,0 +1,15 @@
+[package]
+name="nodeeasy-desktop"
+version="3.0.0"
+edition="2024"
+
+[build-dependencies]
+tauri-build="2"
+
+[dependencies]
+anyhow="1"
+axum="0.8"
+nodeeasy-app={path="../crates/nodeeasy-app"}
+tauri="2"
+tokio={version="1",features=["rt-multi-thread","net"]}
+tracing-subscriber={version="0.3",features=["fmt","env-filter"]}
