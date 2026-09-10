@@ -1,17 +1,6 @@
 {
-  "name": "nodeeasy-frontend",
-  "private": true,
-  "version": "3.0.0",
-  "type": "module",
-  "scripts": {
-    "build": "vite build",
-    "typecheck": "vue-tsc --noEmit"
-  },
-  "dependencies": {
-    "@vitejs/plugin-vue": "latest",
-    "vite": "latest",
-    "vue": "latest",
-    "typescript": "latest",
-    "vue-tsc": "latest"
-  }
+  "name":"nodeeasy-frontend","private":true,"version":"3.0.0","type":"module",
+  "scripts":{"dev":"vite","build":"vite build","typecheck":"vue-tsc --noEmit"},
+  "dependencies":{"@vitejs/plugin-vue":"latest","vite":"latest","vue":"latest","typescript":"latest","vue-tsc":"latest","echarts":"latest","lucide-vue-next":"latest","tailwindcss":"latest","@tailwindcss/vite":"latest"},
+  "devDependencies":{}
 }
