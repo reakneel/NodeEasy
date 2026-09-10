@@ -37,6 +37,8 @@ cd src-tauri
 cargo tauri build
 ```
 
+The frontend CI pins TypeScript 5.9.3 with vue-tsc 3.3.11 to keep the Vue type-checking toolchain deterministic.
+
 ## API
 
 - `GET /api/v1/health`
