@@ -18,17 +18,13 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - name: Install Tauri CLI
-        run: cargo install tauri-cli --version '^2'
-      - name: Build installer
-        working-directory: src-tauri
-        run: cargo tauri build --target ${{ matrix.arch }}
-      - name: Upload release assets
+      - name: Build and publish Tauri installer
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           projectPath: src-tauri
+          args: --target ${{ matrix.arch }}
           tagName: ${{ github.ref_name }}
           releaseName: NodeEasy ${{ github.ref_name }}
           releaseBody: Automated NodeEasy desktop release.
