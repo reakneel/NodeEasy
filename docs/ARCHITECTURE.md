@@ -1,4 +1,4 @@
-# NodeEasy Architecture Freeze v1.2
+# NodeEasy Architecture Freeze v1.3
 
 ## 1. Product boundary
 
@@ -6,116 +6,109 @@ NodeEasy is a **node data center**, not a proxy client. The product pipeline is:
 
 `collect -> decode -> detect -> parse -> normalize -> fingerprint -> deduplicate -> persist -> test -> score -> export -> share`
 
-NodeEasy owns node intelligence, measurement, ranking and distribution. It does not own TUN, system proxy routing, traffic forwarding or third-party engine authentication.
+NodeEasy owns node intelligence, measurement, ranking and distribution. It does not own TUN, system proxy routing or long-lived traffic forwarding.
 
 ## 2. Runtime architecture
 
-NodeEasy is a modular monolith with stable internal boundaries:
+NodeEasy remains a modular monolith:
 
-- `core`: canonical domain model, validation, fingerprinting and scoring primitives
-- `sources`: public/authorized source collection and decoding
-- `storage`: SQLite repositories and migrations
-- `testing`: bounded, cancellable network probes
-- `scoring`: deterministic quality scoring and explanations
+- `core`: canonical domain, validation, fingerprinting, parsing primitives and scoring
+- `sources`: pluggable public/authorized source adapters
+- `storage`: SQLite repositories/migrations
+- `testing`: bounded cancellable probes
+- `scoring`: deterministic quality scoring
 - `secrets`: OS-backed credential storage
-- `export`: protocol-specific configuration/subscription adapters
-- `api`: Axum HTTP + WebSocket API
-- `app`: Tauri lifecycle and desktop integration
+- `export`: protocol configuration/subscription adapters
+- `engine`: optional Mihomo/sing-box/Xray adapters
+- `api`: Axum HTTP + WebSocket
+- `app`: Tauri lifecycle
 
-The module boundaries are intentionally extraction-friendly for future service mode.
+The boundaries are intentionally extraction-friendly for later service mode.
 
-## 3. Technology
+## 3. Source adapter boundary
 
-- Rust stable / Tokio / Axum / Reqwest / Serde / SQLx / tracing
-- SQLite first; schema remains PostgreSQL-compatible in principle
-- Tauri 2 desktop shell
-- Vue 3 + Vite + TypeScript + Tailwind CSS
+Every source implements:
 
-## 4. Canonical node model
+`SourceAdapter::collect() -> ParsedNode[]`
 
-The canonical protocol enum supports Shadowsocks, Shadowsocks2022, VMess, VLESS, Trojan, Hysteria, Hysteria2, TUIC, WireGuard, SOCKS5, HTTP(S) and AnyTLS.
+Current adapters:
 
-A fingerprint is derived from canonical identity fields rather than display names. Source membership is separate from node identity so the same node may arrive from multiple sources.
+- HTTP(S) subscription
+- GitHub blob URL → raw GitHub
+- raw public GitHub
+- local file
+- manual API import
 
-Secrets are never part of the canonical `Node` record. Credential material is referenced through the secrets boundary.
+Remote sources remain HTTP(S)-only and use the existing SSRF, DNS and body-size controls. Local/manual inputs are size bounded. Source-specific authentication is not part of the canonical source contract.
 
-## 5. Measurement architecture
+## 4. Parser boundary
 
-All probes implement the same lifecycle concept:
+The parser converts external representations into `ParsedNode` and never exposes source/engine-specific structures to storage or scheduling code.
+
+Supported representations include:
+
+- URI lines
+- standard / URL-safe Base64 subscriptions
+- Clash/Mihomo YAML
+- Clash/Mihomo JSON
+
+Canonical protocols include Shadowsocks, Shadowsocks 2022, VMess, VLESS, Trojan, Hysteria, Hysteria2, TUIC, WireGuard, SOCKS5, HTTP(S) and AnyTLS.
+
+## 5. Identity
+
+Fingerprinting uses canonical protocol/endpoint/identity fields. Source membership is separate from node identity. During refresh, repository upsert returns the canonical database UUID so a new parser instance cannot create orphaned source relationships.
+
+Secrets are never part of the canonical `Node` record.
+
+## 6. Measurement
+
+All probes follow:
 
 `prepare -> bounded attempt(s) -> observation -> persist -> aggregate -> score`
 
-Probe requirements:
+Requirements: explicit timeout, cancellation, bounded concurrency, controlled targets, capped bodies, structured errors and SSRF protection.
 
-- explicit timeout/deadline
-- cancellation support
-- bounded concurrency for batches
-- no arbitrary redirect into localhost/private networks
-- capped response/body size
-- controlled measurement targets
-- structured errors without secrets
+Probe types are TCP, TLS, HTTP, latency, download and stability. Protocol-aware proxy traffic is an engine concern, not a core probe concern.
 
-Probe types:
+## 7. Engine adapter boundary
 
-1. TCP reachability
-2. TLS handshake
-3. HTTP request
-4. latency samples
-5. download throughput
-6. repeated stability
+Engines implement an engine-neutral `EngineAdapter`:
 
-An endpoint probe measures reachability/transport quality; protocol-aware proxy traffic remains an adapter concern.
+`canonical Node + optional secret -> EngineConfig`
 
-## 6. Scoring architecture
+Current adapters:
 
-Score 2.0 consumes raw observations rather than a single test result. Components are independently explainable:
+- Mihomo config generation
+- sing-box config generation
+- Xray config generation for VMess/VLESS/Trojan
 
-- availability
-- latency
-- download throughput
-- stability
-- freshness
+The adapter layer also exposes bounded binary availability checks and a bounded process runner. Actual engine binaries are optional runtime dependencies; they are never embedded into `nodeeasy-core`.
 
-The API exposes both the aggregate score and component breakdown so the dashboard can explain rankings.
+## 8. Security boundary
 
-## 7. Secret boundary and exporters
+- public/free nodes are untrusted
+- source fetches block private/loopback/link-local destinations by default
+- source and download bodies are size bounded
+- engine processes have explicit timeouts
+- secrets use the OS credential provider and are excluded from normal node rows/logs
+- credential-bearing exports require secret material
+- no engine is allowed to silently turn NodeEasy into a system-wide proxy
 
-Credential-bearing configuration is generated only through the secret store. Secrets use an OS-backed credential provider where available and are never written into ordinary node rows or logs.
+## 9. API
 
-Exporters are adapters:
+The frontend consumes the API rather than storage directly. Long-running work publishes lifecycle events through EventBus/WebSocket.
 
-- Mihomo/Clash
-- sing-box
-- V2Ray/URI
+V3.2 adds:
 
-They consume the canonical node plus secret material and return generated configuration. Engine-specific structures must not leak back into `core`.
+- `POST /api/v1/sources/import`
+- `POST /api/v1/engines/config`
 
-## 8. Source security
+Existing source sync and export APIs continue to use canonical contracts.
 
-Remote source fetching is HTTP(S)-only by default and applies SSRF filtering, size limits and bounded execution. Public/free nodes are untrusted. Source content, node metadata and credentials are treated as hostile input.
+## 10. Extensibility policy
 
-## 9. API and realtime model
+Adding a source, protocol parser or engine must not require changes to Scheduler, Worker, dashboard state or storage semantics. New integrations belong behind `SourceAdapter`, parser normalization, or `EngineAdapter` boundaries.
 
-The frontend consumes the API rather than storage directly. Long-running source sync and batch testing publish lifecycle events through EventBus/WebSocket.
+## 11. Delivery policy
 
-Core API groups are:
-
-- health and nodes
-- source ingestion/sync
-- jobs and realtime events
-- measurement/test history
-- score explanations
-- secret references
-- exports/subscriptions
-
-## 10. Desktop boundary
-
-Tauri starts the local API on loopback and serves the Vite frontend. The desktop shell does not become the domain layer. This keeps the backend independently testable and allows a later service deployment.
-
-## 11. Extensibility policy
-
-New platforms, protocols or proxy engines must be adapters. Scheduler, Worker, storage and dashboard logic consume canonical Node/Test/Score/Event contracts and must not branch on engine-specific types.
-
-## 12. Delivery policy
-
-V3.0 is the local-first foundation. V3.1 completes measurement depth, explainable scoring, secret storage and protocol exporters. V3.2 expands sources/protocols/engine adapters. Service mode is deferred until the desktop workflow is stable.
+V3.0 foundation, V3.1 measurement/security/export and V3.2 source/parser/engine expansion are complete. V4 is reserved for authenticated service mode, PostgreSQL deployment and multi-user operations after the desktop workflow proves stable.
