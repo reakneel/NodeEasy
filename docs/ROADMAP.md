@@ -18,49 +18,49 @@
 
 **Status: complete.**
 
-### Measurement
-
-- [x] unified cancellable Probe interface
-- [x] TCP probe refactor
-- [x] TLS HTTPS handshake probe
-- [x] HTTP probe
-- [x] repeated latency sampling
-- [x] controlled download throughput with HTTPS target validation and body cap
-- [x] repeated stability observations
-- [x] cancellation and bounded batch execution
-- [x] raw test/history persistence
-- [x] score history persistence
-
-### Scoring and dashboard
-
-- [x] Score 2.0 component model
-- [x] explainable score breakdown API
-- [x] measurement history API
-- [x] realtime batch progress events
-- [x] dashboard score breakdown and history panel
-
-### Security and distribution
-
+- [x] unified cancellable probes: TCP/TLS/HTTP/latency/download/stability
+- [x] bounded batch execution and raw measurement/history persistence
+- [x] Score 2.0 with explainable component breakdown/history
 - [x] OS-backed secret store
-- [x] secrets separated from Node records
-- [x] Mihomo/Clash exporter
-- [x] sing-box exporter
-- [x] V2Ray/URI exporter
-- [x] generated URI/base64 subscription views
+- [x] Mihomo/Clash, sing-box and V2Ray/URI exporters
+- [x] generated URI/base64 subscriptions
 - [x] DNS-aware measurement SSRF guard
 
 ## V3.2 — Source and Engine Expansion
 
-- [ ] pluggable source adapters
-- [ ] GitHub/raw public source adapter
-- [ ] local-file source adapter
-- [ ] manual import API
-- [ ] additional protocol parsers
-- [ ] optional Mihomo adapter
-- [ ] optional sing-box adapter
-- [ ] optional Xray adapter
+**Status: complete.**
 
-Adapters must not leak engine-specific types into the canonical core model.
+### Sources
+
+- [x] pluggable `SourceAdapter` contract
+- [x] HTTP subscription adapter retained behind the common contract
+- [x] GitHub blob → raw.githubusercontent.com adapter
+- [x] raw GitHub public source ingestion with existing SSRF/size controls
+- [x] local-file adapter with bounded file size
+- [x] manual import API
+- [x] source sync persistence and canonical node identity preservation
+
+### Protocol parsing
+
+- [x] Shadowsocks 2022
+- [x] Hysteria / Hysteria2 / HY2
+- [x] TUIC
+- [x] SOCKS5
+- [x] HTTP proxy
+- [x] AnyTLS
+- [x] expanded Clash YAML/JSON mappings
+- [x] Base64 and URL-safe Base64 subscription decoding
+- [x] protocol parser regression tests
+
+### Engine adapters
+
+- [x] engine-neutral `EngineAdapter` contract
+- [x] Mihomo config adapter
+- [x] sing-box config adapter
+- [x] Xray config adapter for VMess/VLESS/Trojan
+- [x] bounded binary availability checks
+- [x] bounded engine process execution helper
+- [x] engine-specific types isolated from `nodeeasy-core`
 
 ## V4 — Service Mode
 
@@ -75,4 +75,4 @@ Only after the local-first desktop workflow is stable:
 
 ## Release gates
 
-Every release must pass Rust check/clippy/test, frontend typecheck/build, security regression tests and documentation/API consistency. Windows packaging must succeed for supported targets before a desktop release is called complete.
+Every release must pass Rust check/clippy/test, frontend typecheck/build, source/parser regression tests, security regression tests and documentation/API consistency. Windows packaging must succeed for supported targets before a desktop release is called complete.
