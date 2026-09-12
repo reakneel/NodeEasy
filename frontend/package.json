@@ -4,14 +4,20 @@
   "version": "3.0.0",
   "type": "module",
   "scripts": {
+    "dev": "vite",
     "build": "vite build",
     "typecheck": "vue-tsc --noEmit"
   },
   "dependencies": {
+    "@tailwindcss/vite": "latest",
     "@vitejs/plugin-vue": "latest",
+    "echarts": "latest",
+    "lucide-vue-next": "latest",
+    "tailwindcss": "latest",
+    "typescript": "5.9.3",
     "vite": "latest",
     "vue": "latest",
-    "typescript": "latest",
-    "vue-tsc": "latest"
-  }
+    "vue-tsc": "3.3.11"
+  },
+  "devDependencies": {}
 }

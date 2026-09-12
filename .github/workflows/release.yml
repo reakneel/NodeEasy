@@ -1,0 +1,32 @@
+name: release
+on:
+  push:
+    tags: ['v*']
+permissions:
+  contents: write
+jobs:
+  windows:
+    strategy:
+      matrix:
+        arch: [x86_64-pc-windows-msvc, aarch64-pc-windows-msvc]
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.arch }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Build and publish Tauri installer
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          projectPath: src-tauri
+          args: --target ${{ matrix.arch }}
+          tagName: ${{ github.ref_name }}
+          releaseName: NodeEasy ${{ github.ref_name }}
+          releaseBody: Automated NodeEasy desktop release.
+          releaseDraft: false
+          prerelease: false

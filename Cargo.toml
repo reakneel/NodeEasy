@@ -12,15 +12,16 @@ license = "MIT"
 anyhow = "1"
 async-trait = "0.1"
 base64 = "0.22"
-axum = "0.8"
+axum = { version = "0.8", features = ["ws"] }
 chrono = { version = "0.4", features = ["serde", "clock"] }
 futures-util = "0.3"
+qrcode = "0.14"
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "charset", "http2", "json", "stream"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 serde_yaml = "0.9"
 sha2 = "0.10"
-sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio-rustls", "sqlite", "migrate", "chrono", "uuid"] }
+sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio-rustls", "sqlite", "macros", "migrate", "chrono", "uuid"] }
 thiserror = "2"
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "net", "fs", "sync", "time"] }
 tracing = "0.1"
