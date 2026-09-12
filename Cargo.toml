@@ -15,7 +15,7 @@ base64 = "0.22"
 axum = { version = "0.8", features = ["ws"] }
 chrono = { version = "0.4", features = ["serde", "clock"] }
 futures-util = "0.3"
-keyring = "3"
+keyring = { version = "3", features = ["apple-native", "windows-native", "sync-secret-service"] }
 qrcode = "0.14"
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "charset", "http2", "json", "stream"] }
 serde = { version = "1", features = ["derive"] }
