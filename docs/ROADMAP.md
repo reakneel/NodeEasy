@@ -1,50 +1,57 @@
 # NodeEasy Roadmap
 
-## V3.0 — Foundation Release
+## V3.0 — Foundation
 
-Status: **complete**.
+**Status: complete.**
 
-NodeEasy V3.0 is the local-first node data center foundation:
+- [x] M0 architecture freeze
+- [x] M1 Rust workspace, canonical domain, SQLite migrations/repositories
+- [x] M2 HTTP(S) source ingestion, decoding, normalization, deduplication and SSRF safeguards
+- [x] M3 Axum API, jobs, EventBus and WebSocket
+- [x] M4 Vue/Vite dashboard foundation
+- [x] M5 bounded TCP probe
+- [x] M6 deterministic score foundation
+- [x] M7 safe catalog JSON + QR deep links
+- [x] M8 Tauri 2 Windows release workflow
 
-`collect -> decode -> parse -> normalize -> fingerprint -> deduplicate -> persist -> test -> score -> export -> share`
+V3.0 deliberately did not persist or export credentials and did not pretend TCP reachability was a complete proxy-quality measurement.
 
-### Completed milestones
+## V3.1 — Measurement + Secure Export
 
-- [x] M0 — Architecture freeze and product boundary
-- [x] M1 — Rust workspace, domain model, SQLite schema, migrations and repositories
-- [x] M2 — HTTP source ingestion, decoding, parsing, normalization, fingerprinting, deduplication and SSRF safeguards
-- [x] M3 — Axum API, jobs, EventBus and WebSocket events
-- [x] M4 — Vue 3 + Vite dashboard foundation
-- [x] M5 — bounded TCP connectivity probe with timeout and persistence
-- [x] M6 — deterministic 0–100 score model
-- [x] M7 — safe node catalog JSON export and QR deep-link sharing
-- [x] M8 — Tauri 2 desktop shell and Windows release workflow
+**Status: implementation target.**
 
-### V3.0 scope notes
+### Measurement
 
-M5 currently provides the first TCP probe. TLS, HTTP, download and repeated stability probes remain separate capabilities for the next iteration.
-
-M7 intentionally does **not** export credential-bearing Mihomo/Clash/sing-box configurations yet. The current export surface is a safe node catalog plus `nodeeasy://` QR targets. A protected secret store should exist before credentials, private keys or generated subscriptions are persisted or exposed.
-
-## V3.1 — Measurement and Export
-
-Priority: **high**.
-
+- [ ] unified Probe interface
+- [ ] TCP probe refactor
 - [ ] TLS handshake probe
 - [ ] HTTP probe
-- [ ] latency measurement with repeated observations
-- [ ] download throughput probe
-- [ ] stability/reconnect probe
-- [ ] cancellation and bounded batch testing
-- [ ] richer test history and status history APIs
-- [ ] explainable score breakdown in the dashboard
-- [ ] secure credential/secret store
+- [ ] repeated latency sampling
+- [ ] controlled download throughput
+- [ ] repeated stability/reconnect checks
+- [ ] cancellation and bounded batch execution
+- [ ] raw observation/history persistence
+- [ ] status-history aggregation
+
+### Scoring and dashboard
+
+- [ ] Score 2.0 component model
+- [ ] explainable score breakdown API
+- [ ] measurement history API
+- [ ] realtime batch progress
+- [ ] dashboard gauges/time-series/ranking views
+
+### Security and distribution
+
+- [ ] OS-backed secret store
+- [ ] secret references separate from Node
 - [ ] Mihomo/Clash exporter
 - [ ] sing-box exporter
-- [ ] V2Ray/URI exporters
+- [ ] V2Ray/URI exporter
 - [ ] generated subscription views
+- [ ] export tests that prove secrets are not logged or persisted in node rows
 
-## V3.2 — Platform and Source Expansion
+## V3.2 — Source and Engine Expansion
 
 - [ ] pluggable source adapters
 - [ ] GitHub/raw public source adapter
@@ -55,26 +62,19 @@ Priority: **high**.
 - [ ] optional sing-box adapter
 - [ ] optional Xray adapter
 
-The core domain remains proxy-engine agnostic. Platform/engine adapters must not leak engine-specific types into the canonical node model.
+Adapters must not leak engine-specific types into the canonical core model.
 
 ## V4 — Service Mode
 
 Only after the local-first desktop workflow is stable:
 
-- [ ] PostgreSQL-compatible persistence path
+- [ ] PostgreSQL deployment path
 - [ ] authenticated multi-user API
-- [ ] subscription sharing/access controls
-- [ ] background worker mode
-- [ ] observability and metrics
+- [ ] controlled subscription sharing
+- [ ] background workers
+- [ ] observability/metrics
 - [ ] deployment/container profile
 
-## Release acceptance
+## Release gates
 
-A release is considered complete only when:
-
-1. Rust workspace CI passes.
-2. Frontend typecheck/build passes.
-3. Tauri Windows packaging succeeds for supported targets.
-4. Security baseline remains enabled.
-5. Documentation matches the implemented API and feature set.
-6. No credential-bearing export is enabled without a deliberate secret-management design.
+Every release must pass Rust check/clippy/test, frontend typecheck/build, security regression tests and documentation/API consistency. Windows packaging must succeed for supported targets before a desktop release is called complete.
