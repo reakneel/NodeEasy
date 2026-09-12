@@ -11,7 +11,7 @@ pub mod source_fetcher;
 pub mod tester;
 pub mod ws;
 
-use axum::{extract::{Path, Query, State}, http::StatusCode, response::IntoResponse, routing::{delete, get, post, put}, Json, Router};
+use axum::{extract::{Path, Query, State}, http::StatusCode, response::IntoResponse, routing::{get, post, put}, Json, Router};
 use base64::Engine;
 use chrono::Utc;
 use nodeeasy_core::Source;
