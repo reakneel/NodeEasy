@@ -3,7 +3,7 @@ resolver = "2"
 members = ["crates/nodeeasy-core", "crates/nodeeasy-app"]
 
 [workspace.package]
-version = "3.0.0"
+version = "3.1.0"
 edition = "2024"
 rust-version = "1.88"
 license = "MIT"
@@ -15,6 +15,7 @@ base64 = "0.22"
 axum = { version = "0.8", features = ["ws"] }
 chrono = { version = "0.4", features = ["serde", "clock"] }
 futures-util = "0.3"
+keyring = { version = "3", features = ["apple-native", "windows-native", "sync-secret-service"] }
 qrcode = "0.14"
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "charset", "http2", "json", "stream"] }
 serde = { version = "1", features = ["derive"] }
@@ -24,6 +25,7 @@ sha2 = "0.10"
 sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio-rustls", "sqlite", "macros", "migrate", "chrono", "uuid"] }
 thiserror = "2"
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "net", "fs", "sync", "time"] }
+tokio-util = "0.7"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["fmt", "env-filter"] }
 url = "2"
