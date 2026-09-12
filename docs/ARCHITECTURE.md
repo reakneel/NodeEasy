@@ -1,29 +1,27 @@
-# NodeEasy Architecture Freeze v1.0
+# NodeEasy Architecture Freeze v1.1
 
 ## 1. Product boundary
 
-NodeEasy is a node data platform, not a proxy client. Its core responsibilities are:
+NodeEasy is a **node data platform**, not a proxy client. Its core responsibilities are:
 
 `collect -> decode -> detect -> parse -> normalize -> fingerprint -> deduplicate -> persist -> test -> score -> export -> share`
 
-The core does not own TUN, system proxy, traffic routing, or user authentication for third-party proxy engines.
+The core does not own TUN, system proxy routing, traffic forwarding, or third-party proxy-engine authentication.
 
 ## 2. Runtime architecture
 
-NodeEasy is a modular monolith. One desktop application contains independently bounded modules:
+NodeEasy is a modular monolith. The desktop application contains independently bounded modules:
 
-- `core`: domain models, errors, configuration, fingerprints
-- `sources`: public/authorized source collectors and decoders
+- `core`: domain models, errors, fingerprints and scoring primitives
+- `sources`: public/authorized source collection and decoding
 - `storage`: SQLite repositories and migrations
-- `testing`: TCP/TLS/HTTP/latency/download/stability probes
-- `scoring`: availability, latency, speed, stability, freshness scoring
-- `subscriptions`: generated subscription views
-- `export`: Clash/Mihomo, sing-box, V2Ray/URI and share-link exporters
+- `testing`: bounded network probes
+- `scoring`: deterministic quality scoring
+- `export`: safe catalog export and QR sharing in V3.0
 - `api`: Axum HTTP + WebSocket API
-- `engines`: optional Mihomo/sing-box/Xray adapters
 - `app`: Tauri application lifecycle
 
-Future services can be extracted by module boundary without changing the domain model.
+Future services can be extracted by module boundary without changing the canonical domain model.
 
 ## 3. Technology
 
@@ -44,9 +42,9 @@ Future services can be extracted by module boundary without changing the domain 
 - Vite
 - TypeScript
 - Tailwind CSS
-- shadcn-vue
-- Lucide
-- ECharts
+- shadcn-vue direction
+- Lucide direction
+- ECharts direction
 
 ### Desktop
 
@@ -54,7 +52,7 @@ Future services can be extracted by module boundary without changing the domain 
 
 ## 4. Canonical node model
 
-Supported protocols initially:
+Supported protocols initially include:
 
 - Shadowsocks / Shadowsocks2022
 - VMess
@@ -71,37 +69,28 @@ A node fingerprint is derived from canonical identity fields, not display names.
 
 ## 5. Data model
 
-Core tables:
+Core tables include:
 
 - `sources`
 - `source_runs`
 - `nodes`
 - `node_sources`
 - `node_tests`
-- `node_status_history`
-- `subscriptions`
-- `subscription_items`
 - `jobs`
 
 SQLite is the first storage engine. SQLx migrations and repository boundaries keep a future PostgreSQL migration feasible.
 
 ## 6. Source engine
 
-`NodeSource` is the extension point. Initial source types:
+The source pipeline is intentionally staged:
 
-- HTTP subscription
-- GitHub/raw public source
-- local file
-- manual input
-- API source later
+`fetch -> size/SSRF validation -> decode -> detect -> parse -> normalize -> fingerprint -> deduplicate -> persist`
 
-A source run records fetched, parsed, added, updated, removed and failed counts.
-
-Only public or explicitly authorized sources are supported. Fetching must protect against SSRF and must not log credentials, subscription tokens or private keys.
+The initial remote source is HTTP(S). Only public or explicitly authorized sources are supported. Source fetching must protect against SSRF, enforce size limits, and avoid logging credentials, subscription tokens or private keys.
 
 ## 7. Testing model
 
-Testing is intentionally split into independent probes:
+V3.0 implements the first bounded TCP connectivity probe. The model is intentionally extensible toward:
 
 1. TCP reachability
 2. TLS handshake
@@ -110,59 +99,55 @@ Testing is intentionally split into independent probes:
 5. download throughput
 6. repeated stability
 
-A single successful speed test does not equal a stable node. Stability is calculated from repeated observations and status history.
+A successful connectivity check is not equivalent to a stable or high-quality node.
 
 ## 8. API contract
 
-Initial API surface:
+V3.0 exposes:
 
-- `GET /api/v1/dashboard`
-- `GET/POST/DELETE /api/v1/nodes`
-- `GET/POST/PATCH/DELETE /api/v1/sources`
+- `GET /api/v1/health`
+- `GET /api/v1/nodes`
+- `POST /api/v1/nodes/{id}/test`
+- `GET|POST /api/v1/sources`
 - `POST /api/v1/sources/{id}/sync`
-- `POST /api/v1/tests/nodes/{id}`
-- `POST /api/v1/tests/batch`
-- `GET /api/v1/jobs`
-- `GET /api/v1/jobs/{id}`
-- `GET /api/v1/export/{format}`
-- `GET/POST/PATCH /api/v1/subscriptions`
-- `GET /api/v1/subscriptions/{id}/content`
+- `POST /api/v1/jobs`
+- `GET /api/v1/export/nodes.json`
+- `GET /api/v1/nodes/{id}/qr`
 - `GET /api/v1/ws`
 
 The frontend consumes this API rather than accessing storage directly.
 
-## 9. UI direction
+## 9. Export and secret boundary
 
-Dashboard-first design replaces the old WinForms table as the primary experience.
+V3.0 deliberately avoids credential-bearing generated proxy configurations. Node catalog JSON and QR share targets do not expose private keys or subscription credentials.
 
-- overview cards for node count, healthy count, average latency and throughput
-- gauge/ring visualizations for health and quality
-- time-series charts for availability, latency and speed
-- node table remains for detailed operations
-- source, test, subscription and settings pages remain accessible
+Mihomo/Clash, sing-box and V2Ray/URI exporters belong to V3.1 and must be implemented behind a deliberate secret-management boundary. Secrets should not be stored in ordinary node records or emitted into logs.
 
-The UI is optimized for at-a-glance monitoring while retaining dense operational data.
+Proxy engines remain optional adapters and must not become dependencies of the canonical core model.
 
-## 10. Security baseline
+## 10. UI direction
+
+The dashboard replaces the old WinForms table as the primary experience:
+
+- overview cards for node count, healthy count and quality metrics
+- node table for dense operational data
+- realtime WebSocket event updates
+- source/test/export operations exposed through the API
+
+More advanced gauges, time-series charts and operational pages are planned as the measurement system matures.
+
+## 11. Security baseline
 
 - HTTP/HTTPS only for remote source fetching by default
 - block localhost, loopback, private, link-local and other internal destinations unless explicitly enabled
+- enforce source size/rate limits
 - do not expose engine controllers by default
 - never persist or log secrets unnecessarily
-- rate-limit source synchronization
 - treat public/free nodes as untrusted and unsuitable for sensitive traffic
 - isolate optional proxy engines from the core API
 
-## 11. Delivery milestones
+## 12. Delivery policy
 
-- M0 Architecture Freeze
-- M1 Rust workspace + SQLite + domain models
-- M2 Source Engine
-- M3 Axum API + WebSocket
-- M4 Tauri + dashboard
-- M5 Test Engine
-- M6 Scoring
-- M7 Export + QR + subscriptions
-- M8 Release
+V3.0 is the **architecture and local-first foundation release**. Later milestones may extend interfaces, but must not silently change the product boundary or canonical model.
 
-M0 is frozen by this document. Later milestones may extend interfaces, but must not silently change the product boundary or canonical model.
+The next major work should add measurement depth and secure export before introducing multi-user/service complexity.
