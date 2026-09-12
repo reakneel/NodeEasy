@@ -3,7 +3,7 @@ import { computed, onMounted, ref } from 'vue'
 type Node={id:string;name?:string;protocol:string;endpoint:{host:string;port:number};status:string;score:number}
 type Score={total:number;availability:number;latency:number;download:number;stability:number;freshness:number}
 type Test={id:string;test_type:string;success:boolean;error?:string}
-type Source={id:string;name:string;kind:string;url:string;last_error?:string}
+type Source={id:string;name:string;kind:string;url:string;last_error?:string|null}
 const nodes=ref<Node[]>([]),sources=ref<Source[]>([]),loading=ref(true),online=ref(false),selected=ref<Node|null>(null),score=ref<Score|null>(null),history=ref<Test[]>([]),busy=ref(false),sourceKind=ref('github_raw'),sourceName=ref('GitHub public source'),sourceUrl=ref(''),importBody=ref(''),importName=ref('manual'),engine=ref('mihomo'),engineConfig=ref(''),notice=ref('')
 const healthy=computed(()=>nodes.value.filter(n=>n.status==='healthy').length),average=computed(()=>nodes.value.length?nodes.value.reduce((a,n)=>a+n.score,0)/nodes.value.length:0)
 async function load(){loading.value=true;try{const [n,s]=await Promise.all([fetch('/api/v1/nodes'),fetch('/api/v1/sources')]);nodes.value=(await n.json()).items;sources.value=(await s.json()).items}finally{loading.value=false}}
@@ -12,7 +12,7 @@ async function test(n:Node){busy.value=true;try{await fetch(`/api/v1/nodes/${n.i
 async function addSource(){notice.value='';const r=await fetch('/api/v1/sources',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({name:sourceName.value,kind:sourceKind.value,url:sourceUrl.value})});notice.value=r.ok?'Source added':'Source failed';if(r.ok)await load()}
 async function syncSource(s:Source){notice.value='';const r=await fetch(`/api/v1/sources/${s.id}/sync`,{method:'POST'});notice.value=r.ok?'Source synced':'Source sync failed';await load()}
 async function manualImport(){const r=await fetch('/api/v1/sources/import',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({name:importName.value,body:importBody.value,kind:'manual'})});notice.value=r.ok?'Imported':'Import failed';if(r.ok){importBody.value='';await load()}}
-async function buildEngine(){if(!selected.value)return;const r=await fetch('/api/v1/engines/config',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({engine:engine.value,node_id:selected.value.id})});engineConfig.value=r.ok?JSON.stringify((await r.json()).config??await r.json(),null,2):'engine config unavailable'}
+async function buildEngine(){if(!selected.value)return;const r=await fetch('/api/v1/engines/config',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({engine:engine.value,node_id:selected.value.id})});if(r.ok){const data=await r.json();engineConfig.value=typeof data.config==='string'?data.config:JSON.stringify(data.config??data,null,2)}else{engineConfig.value='engine config unavailable'}}
 onMounted(async()=>{await load();try{const ws=new WebSocket(`${location.protocol==='https:'?'wss':'ws'}://${location.host}/api/v1/ws`);ws.onopen=()=>online.value=true;ws.onclose=()=>online.value=false;ws.onmessage=()=>load()}catch{}})
 </script>
 <template>
