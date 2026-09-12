@@ -2,259 +2,45 @@ pub mod db;
 pub mod events;
 pub mod export;
 pub mod jobs;
+pub mod measurement;
+pub mod probe;
 pub mod repository;
+pub mod secrets;
 pub mod source;
 pub mod source_fetcher;
 pub mod tester;
 pub mod ws;
 
-use axum::{
-    extract::{Path, State},
-    http::StatusCode,
-    response::IntoResponse,
-    routing::{get, post},
-    Json, Router,
-};
+use axum::{extract::{Path, Query, State}, http::StatusCode, response::IntoResponse, routing::{delete, get, post, put}, Json, Router};
+use base64::Engine;
 use chrono::Utc;
 use nodeeasy_core::Source;
 use serde::Deserialize;
 use serde_json::json;
 use sqlx::SqlitePool;
 use std::{env, sync::Arc};
+use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
-#[derive(Clone)]
-pub struct AppState {
-    pub pool: SqlitePool,
-    pub sources: source::SharedSourceEngine,
-    pub bus: Arc<events::EventBus>,
-}
+#[derive(Clone)] pub struct AppState { pub pool:SqlitePool,pub sources:source::SharedSourceEngine,pub bus:Arc<events::EventBus>,pub secrets:secrets::SecretStore }
+async fn health()->impl IntoResponse{Json(json!({"status":"ok","version":"3.1.0","api":"v1"}))}
+async fn list_nodes(State(s):State<Arc<AppState>>)->impl IntoResponse{match repository::list_nodes(&s.pool,10000).await{Ok(v)=>(StatusCode::OK,Json(json!({"items":v}))).into_response(),Err(e)=>(StatusCode::INTERNAL_SERVER_ERROR,Json(json!({"error":e.to_string()}))).into_response()}}
+async fn list_sources(State(s):State<Arc<AppState>>)->impl IntoResponse{match repository::list_sources(&s.pool).await{Ok(v)=>(StatusCode::OK,Json(json!({"items":v}))).into_response(),Err(e)=>(StatusCode::INTERNAL_SERVER_ERROR,Json(json!({"error":e.to_string()}))).into_response()}}
+async fn export_nodes(State(s):State<Arc<AppState>>)->impl IntoResponse{match repository::list_nodes(&s.pool,10000).await{Ok(v)=>(StatusCode::OK,[(axum::http::header::CONTENT_TYPE,"application/json")],export::json(&v)).into_response(),Err(e)=>(StatusCode::INTERNAL_SERVER_ERROR,Json(json!({"error":e.to_string()}))).into_response()}}
+async fn qr_node(State(s):State<Arc<AppState>>,Path(id):Path<Uuid>)->impl IntoResponse{match repository::list_nodes(&s.pool,10000).await{Ok(v)=>match v.into_iter().find(|n|n.id==id){Some(n)=>match export::qr_ascii(&n){Ok(q)=>(StatusCode::OK,[(axum::http::header::CONTENT_TYPE,"text/plain; charset=utf-8")],q).into_response(),Err(e)=>(StatusCode::INTERNAL_SERVER_ERROR,Json(json!({"error":e.to_string()}))).into_response()},None=>(StatusCode::NOT_FOUND,Json(json!({"error":"node not found"}))).into_response()},Err(e)=>(StatusCode::INTERNAL_SERVER_ERROR,Json(json!({"error":e.to_string()}))).into_response()}}
+#[derive(Deserialize)] struct CreateSource{name:String,kind:Option<String>,url:String,interval_seconds:Option<u64>}
+async fn create_source(State(s):State<Arc<AppState>>,Json(i):Json<CreateSource>)->impl IntoResponse{let source=Source{id:Uuid::new_v4(),name:i.name,kind:i.kind.unwrap_or_else(||"http_subscription".into()),url:i.url,enabled:true,interval_seconds:i.interval_seconds.unwrap_or(3600),last_fetch_at:None,last_success_at:None,last_error:None};match repository::upsert_source(&s.pool,&source).await{Ok(())=>(StatusCode::CREATED,Json(source)).into_response(),Err(e)=>(StatusCode::INTERNAL_SERVER_ERROR,Json(json!({"error":e.to_string()}))).into_response()}}
+async fn sync_source(State(s):State<Arc<AppState>>,Path(id):Path<Uuid>)->impl IntoResponse{let row=sqlx::query_as::<_,(String,String)>("SELECT kind,url FROM sources WHERE id=?").bind(id.to_string()).fetch_optional(&s.pool).await;let Some((kind,url))=match row{Ok(v)=>v,Err(e)=>return(StatusCode::INTERNAL_SERVER_ERROR,Json(json!({"error":e.to_string()}))).into_response()}else{return(StatusCode::NOT_FOUND,Json(json!({"error":"source not found"}))).into_response()};if kind!="http_subscription"{return(StatusCode::BAD_REQUEST,Json(json!({"error":"source kind is not supported"}))).into_response()}match s.sources.sync_http(id,url).await{Ok(stats)=>{s.bus.publish(events::AppEvent::SourceSynced{source_id:id.to_string(),parsed:stats.parsed});(StatusCode::OK,Json(json!({"source_id":id,"synced_at":Utc::now(),"stats":stats}))).into_response()},Err(e)=>(StatusCode::BAD_GATEWAY,Json(json!({"error":e.to_string()}))).into_response()}}
+async fn test_node(State(s):State<Arc<AppState>>,Path(id):Path<Uuid>)->impl IntoResponse{match repository::list_nodes(&s.pool,10000).await{Ok(v)=>match v.into_iter().find(|n|n.id==id){Some(n)=>match tester::tcp(&s.pool,&n,5000).await{Ok(t)=>{s.bus.publish(events::AppEvent::NodeTested{node_id:id.to_string(),success:t.success,latency_ms:t.latency_ms});(StatusCode::OK,Json(t)).into_response()},Err(e)=>(StatusCode::INTERNAL_SERVER_ERROR,Json(json!({"error":e.to_string()}))).into_response()},None=>(StatusCode::NOT_FOUND,Json(json!({"error":"node not found"}))).into_response()},Err(e)=>(StatusCode::INTERNAL_SERVER_ERROR,Json(json!({"error":e.to_string()}))).into_response()}}
+async fn test_batch(State(s):State<Arc<AppState>>,Json(req):Json<measurement::BatchRequest>)->impl IntoResponse{let token=CancellationToken::new();match measurement::run_batch(s.pool.clone(),s.bus.clone(),req,token).await{Ok(v)=>(StatusCode::ACCEPTED,Json(v)).into_response(),Err(e)=>(StatusCode::INTERNAL_SERVER_ERROR,Json(json!({"error":e}))).into_response()}}
+async fn score_node(State(s):State<Arc<AppState>>,Path(id):Path<Uuid>)->impl IntoResponse{match measurement::recompute_score(&s.pool,id).await{Ok(v)=>(StatusCode::OK,Json(v)).into_response(),Err(e)=>(StatusCode::INTERNAL_SERVER_ERROR,Json(json!({"error":e.to_string()}))).into_response()}}
+async fn history(State(s):State<Arc<AppState>>,Path(id):Path<Uuid>)->impl IntoResponse{let rows=sqlx::query_as::<_,(String,String,Option<f64>,Option<f64>,Option<f64>,i64,Option<String>,Option<i64>)>("SELECT id,test_type,latency_ms,download_bps,upload_bps,success,error,duration_ms FROM node_tests WHERE node_id=? ORDER BY tested_at DESC LIMIT 200").bind(id.to_string()).fetch_all(&s.pool).await;match rows{Ok(v)=>{let items=v.into_iter().map(|(id,t,l,d,u,ok,e,dur)|json!({"id":id,"test_type":t,"latency_ms":l,"download_bps":d,"upload_bps":u,"success":ok!=0,"error":e,"duration_ms":dur})).collect::<Vec<_>>();(StatusCode::OK,Json(json!({"items":items}))).into_response()},Err(e)=>(StatusCode::INTERNAL_SERVER_ERROR,Json(json!({"error":e.to_string()}))).into_response()}}
+async fn score_history(State(s):State<Arc<AppState>>,Path(id):Path<Uuid>)->impl IntoResponse{let rows=sqlx::query_as::<_,(f64,f64,f64,f64,f64,f64,String)>("SELECT total,availability,latency,download,stability,freshness,calculated_at FROM score_history WHERE node_id=? ORDER BY calculated_at DESC LIMIT 100").bind(id.to_string()).fetch_all(&s.pool).await;match rows{Ok(v)=>(StatusCode::OK,Json(json!({"items":v}))).into_response(),Err(e)=>(StatusCode::INTERNAL_SERVER_ERROR,Json(json!({"error":e.to_string()}))).into_response()}}
+async fn put_secret(State(s):State<Arc<AppState>>,Path(id):Path<Uuid>,Json(material):Json<secrets::SecretMaterial>)->impl IntoResponse{match s.secrets.set(id,&material){Ok(())=>(StatusCode::NO_CONTENT,()).into_response(),Err(e)=>(StatusCode::INTERNAL_SERVER_ERROR,Json(json!({"error":e}))).into_response()}}
+async fn delete_secret(State(s):State<Arc<AppState>>,Path(id):Path<Uuid>)->impl IntoResponse{match s.secrets.delete(id){Ok(())=>(StatusCode::NO_CONTENT,()).into_response(),Err(e)=>(StatusCode::INTERNAL_SERVER_ERROR,Json(json!({"error":e}))).into_response()}}
+async fn export_one(State(s):State<Arc<AppState>>,Path((format,id)):Path<(String,Uuid)>)->impl IntoResponse{let nodes=match repository::list_nodes(&s.pool,10000).await{Ok(v)=>v,Err(e)=>return(StatusCode::INTERNAL_SERVER_ERROR,Json(json!({"error":e.to_string()}))).into_response()};let Some(n)=nodes.into_iter().find(|n|n.id==id)else{return(StatusCode::NOT_FOUND,Json(json!({"error":"node not found"}))).into_response()};let secret=match s.secrets.get(id){Ok(v)=>v,Err(e)=>return(StatusCode::INTERNAL_SERVER_ERROR,Json(json!({"error":e}))).into_response()};let out=match format.as_str(){"mihomo"|"clash"=>export::mihomo(&n,secret.as_ref()),"sing-box"|"singbox"=>export::sing_box(&n,secret.as_ref()),"v2ray"|"uri"=>export::v2ray_uri(&n,secret.as_ref()),_=>Err("unsupported export format".into())};match out{Ok(v)=>(StatusCode::OK,[(axum::http::header::CONTENT_TYPE,"text/plain; charset=utf-8")],v).into_response(),Err(e)=>(StatusCode::BAD_REQUEST,Json(json!({"error":e}))).into_response()}}
+#[derive(Deserialize)] struct SubQuery{ids:Option<String>}
+async fn subscription(State(s):State<Arc<AppState>>,Path(format):Path<String>,Query(q):Query<SubQuery>)->impl IntoResponse{let nodes=match repository::list_nodes(&s.pool,10000).await{Ok(v)=>v,Err(e)=>return(StatusCode::INTERNAL_SERVER_ERROR,Json(json!({"error":e.to_string()}))).into_response()};let ids=q.ids.map(|x|x.split(',').filter_map(|v|Uuid::parse_str(v).ok()).collect::<std::collections::HashSet<_>>());let mut lines=Vec::new();for n in nodes{if ids.as_ref().is_some_and(|set|!set.contains(&n.id)){continue;}if let Ok(Some(sec))=s.secrets.get(n.id){if let Ok(uri)=export::v2ray_uri(&n,Some(&sec)){lines.push(uri);}}}let body=match format.as_str(){"base64"=>base64::engine::general_purpose::STANDARD.encode(lines.join("\n")),"uri"|"v2ray"=>lines.join("\n"),_=>return(StatusCode::BAD_REQUEST,Json(json!({"error":"supported subscription formats: base64, uri"}))).into_response()};(StatusCode::OK,[(axum::http::header::CONTENT_TYPE,"text/plain; charset=utf-8")],body).into_response()}
+async fn create_job_api(State(s):State<Arc<AppState>>)->impl IntoResponse{match jobs::create_job(&s.pool,&s.bus,"manual").await{Ok(id)=>(StatusCode::ACCEPTED,Json(json!({"job_id":id,"status":"queued"}))).into_response(),Err(e)=>(StatusCode::INTERNAL_SERVER_ERROR,Json(json!({"error":e.to_string()}))).into_response()}}
 
-async fn health() -> impl IntoResponse {
-    Json(json!({"status":"ok","version":"3.0.0","api":"v1"}))
-}
-
-async fn list_nodes(State(s): State<Arc<AppState>>) -> impl IntoResponse {
-    match repository::list_nodes(&s.pool, 100).await {
-        Ok(v) => (StatusCode::OK, Json(json!({"items":v}))).into_response(),
-        Err(e) => (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(json!({"error":e.to_string()})),
-        )
-            .into_response(),
-    }
-}
-
-async fn list_sources(State(s): State<Arc<AppState>>) -> impl IntoResponse {
-    match repository::list_sources(&s.pool).await {
-        Ok(v) => (StatusCode::OK, Json(json!({"items":v}))).into_response(),
-        Err(e) => (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(json!({"error":e.to_string()})),
-        )
-            .into_response(),
-    }
-}
-
-async fn export_nodes(State(s): State<Arc<AppState>>) -> impl IntoResponse {
-    match repository::list_nodes(&s.pool, 1000).await {
-        Ok(v) => (
-            StatusCode::OK,
-            [(axum::http::header::CONTENT_TYPE, "application/json")],
-            export::json(&v),
-        )
-            .into_response(),
-        Err(e) => (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(json!({"error":e.to_string()})),
-        )
-            .into_response(),
-    }
-}
-
-async fn qr_node(State(s): State<Arc<AppState>>, Path(id): Path<Uuid>) -> impl IntoResponse {
-    match repository::list_nodes(&s.pool, 1000).await {
-        Ok(v) => match v.into_iter().find(|n| n.id == id) {
-            Some(n) => match export::qr_ascii(&n) {
-                Ok(q) => (
-                    StatusCode::OK,
-                    [(axum::http::header::CONTENT_TYPE, "text/plain; charset=utf-8")],
-                    q,
-                )
-                    .into_response(),
-                Err(e) => (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    Json(json!({"error":e.to_string()})),
-                )
-                    .into_response(),
-            },
-            None => (
-                StatusCode::NOT_FOUND,
-                Json(json!({"error":"node not found"})),
-            )
-                .into_response(),
-        },
-        Err(e) => (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(json!({"error":e.to_string()})),
-        )
-            .into_response(),
-    }
-}
-
-#[derive(Deserialize)]
-struct CreateSource {
-    name: String,
-    kind: Option<String>,
-    url: String,
-    interval_seconds: Option<u64>,
-}
-
-async fn create_source(
-    State(s): State<Arc<AppState>>,
-    Json(i): Json<CreateSource>,
-) -> impl IntoResponse {
-    let source = Source {
-        id: Uuid::new_v4(),
-        name: i.name,
-        kind: i.kind.unwrap_or_else(|| "http_subscription".into()),
-        url: i.url,
-        enabled: true,
-        interval_seconds: i.interval_seconds.unwrap_or(3600),
-        last_fetch_at: None,
-        last_success_at: None,
-        last_error: None,
-    };
-    match repository::upsert_source(&s.pool, &source).await {
-        Ok(()) => (StatusCode::CREATED, Json(source)).into_response(),
-        Err(e) => (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(json!({"error":e.to_string()})),
-        )
-            .into_response(),
-    }
-}
-
-async fn sync_source(State(s): State<Arc<AppState>>, Path(id): Path<Uuid>) -> impl IntoResponse {
-    let row = sqlx::query_as::<_, (String, String)>("SELECT kind,url FROM sources WHERE id=?")
-        .bind(id.to_string())
-        .fetch_optional(&s.pool)
-        .await;
-
-    let Some((kind, url)) = (match row {
-        Ok(v) => v,
-        Err(e) => {
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({"error":e.to_string()})),
-            )
-                .into_response()
-        }
-    }) else {
-        return (
-            StatusCode::NOT_FOUND,
-            Json(json!({"error":"source not found"})),
-        )
-            .into_response();
-    };
-
-    if kind != "http_subscription" {
-        return (
-            StatusCode::BAD_REQUEST,
-            Json(json!({"error":"source kind is not supported"})),
-        )
-            .into_response();
-    }
-
-    match s.sources.sync_http(id, url).await {
-        Ok(stats) => {
-            s.bus.publish(events::AppEvent::SourceSynced {
-                source_id: id.to_string(),
-                parsed: stats.parsed,
-            });
-            (
-                StatusCode::OK,
-                Json(json!({"source_id":id,"synced_at":Utc::now(),"stats":stats})),
-            )
-                .into_response()
-        }
-        Err(e) => (
-            StatusCode::BAD_GATEWAY,
-            Json(json!({"error":e.to_string()})),
-        )
-            .into_response(),
-    }
-}
-
-async fn test_node(State(s): State<Arc<AppState>>, Path(id): Path<Uuid>) -> impl IntoResponse {
-    match repository::list_nodes(&s.pool, 1000).await {
-        Ok(v) => match v.into_iter().find(|n| n.id == id) {
-            Some(n) => match tester::tcp(&s.pool, &n, 5000).await {
-                Ok(t) => {
-                    s.bus.publish(events::AppEvent::NodeTested {
-                        node_id: id.to_string(),
-                        success: t.success,
-                        latency_ms: t.latency_ms,
-                    });
-                    (StatusCode::OK, Json(t)).into_response()
-                }
-                Err(e) => (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    Json(json!({"error":e.to_string()})),
-                )
-                    .into_response(),
-            },
-            None => (
-                StatusCode::NOT_FOUND,
-                Json(json!({"error":"node not found"})),
-            )
-                .into_response(),
-        },
-        Err(e) => (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(json!({"error":e.to_string()})),
-        )
-            .into_response(),
-    }
-}
-
-async fn create_job(State(s): State<Arc<AppState>>) -> impl IntoResponse {
-    match jobs::create_job(&s.pool, &s.bus, "manual").await {
-        Ok(id) => (
-            StatusCode::ACCEPTED,
-            Json(json!({"job_id":id,"status":"queued"})),
-        )
-            .into_response(),
-        Err(e) => (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(json!({"error":e.to_string()})),
-        )
-            .into_response(),
-    }
-}
-
-pub async fn router(database_url: &str) -> anyhow::Result<Router> {
-    let pool = db::connect(database_url).await?;
-    let fetcher = source_fetcher::SourceFetcher::new(
-        env::var("NODEEASY_ALLOW_PRIVATE_SOURCES").ok().as_deref() == Some("true"),
-    )?;
-    let engine = Arc::new(source::SourceEngine::new(pool.clone(), fetcher));
-    let bus = Arc::new(events::EventBus::new(512));
-    let state = Arc::new(AppState {
-        pool,
-        sources: engine,
-        bus,
-    });
-
-    Ok(Router::new()
-        .route("/api/v1/health", get(health))
-        .route("/api/v1/nodes", get(list_nodes))
-        .route("/api/v1/nodes/{id}/test", post(test_node))
-        .route("/api/v1/sources", get(list_sources).post(create_source))
-        .route("/api/v1/sources/{id}/sync", post(sync_source))
-        .route("/api/v1/jobs", post(create_job))
-        .route("/api/v1/export/nodes.json", get(export_nodes))
-        .route("/api/v1/nodes/{id}/qr", get(qr_node))
-        .route("/api/v1/ws", get(ws::handler))
-        .with_state(state))
-}
+pub async fn router(database_url:&str)->anyhow::Result<Router>{let pool=db::connect(database_url).await?;let fetcher=source_fetcher::SourceFetcher::new(env::var("NODEEASY_ALLOW_PRIVATE_SOURCES").ok().as_deref()==Some("true"))?;let engine=Arc::new(source::SourceEngine::new(pool.clone(),fetcher));let state=Arc::new(AppState{pool,sources:engine,bus:Arc::new(events::EventBus::new(512)),secrets:secrets::SecretStore::new()});Ok(Router::new().route("/api/v1/health",get(health)).route("/api/v1/nodes",get(list_nodes)).route("/api/v1/nodes/{id}/test",post(test_node)).route("/api/v1/nodes/test-batch",post(test_batch)).route("/api/v1/nodes/{id}/score",post(score_node)).route("/api/v1/nodes/{id}/history",get(history)).route("/api/v1/nodes/{id}/score-history",get(score_history)).route("/api/v1/nodes/{id}/secret",put(put_secret).delete(delete_secret)).route("/api/v1/nodes/{id}/export/{format}",get(export_one)).route("/api/v1/subscriptions/{format}",get(subscription)).route("/api/v1/sources",get(list_sources).post(create_source)).route("/api/v1/sources/{id}/sync",post(sync_source)).route("/api/v1/jobs",post(create_job_api)).route("/api/v1/export/nodes.json",get(export_nodes)).route("/api/v1/nodes/{id}/qr",get(qr_node)).route("/api/v1/ws",get(ws::handler)).with_state(state))}
