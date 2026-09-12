@@ -14,8 +14,7 @@ NodeEasy V3 is a local-first node data center: **collect → normalize → dedup
 ## Release path
 
 - [x] V3.0 — foundation, source engine, API, dashboard, TCP probe, scoring, safe catalog export, Tauri packaging
-- [x] V3.1 backend — unified measurement probes, bounded batch execution, history, Score 2.0 breakdown, secret store, Mihomo/Clash, sing-box and V2Ray/URI export
-- [ ] V3.1 frontend polish — gauges, history charts and ranking interactions
+- [x] V3.1 — measurement framework, Score 2.0, secure secret boundary, Mihomo/Clash, sing-box, V2Ray/URI export, subscriptions and dashboard inspection
 - [ ] V3.2 — pluggable source/engine adapters
 - [ ] V4 — service mode / multi-user deployment
 
