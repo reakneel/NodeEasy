@@ -1,6 +1,6 @@
 # NodeEasy
 
-NodeEasy V3 is a local-first node data center: **collect → normalize → deduplicate → test → score → export/share**.
+NodeEasy V3 is a local-first node data center: **collect → normalize → deduplicate → measure → score → export/share**.
 
 ## Stack
 
@@ -9,17 +9,15 @@ NodeEasy V3 is a local-first node data center: **collect → normalize → dedup
 - Frontend: Vue 3 + Vite + TypeScript + Tailwind CSS
 - Realtime: WebSocket event bus
 - API-first modular monolith
+- OS-backed secret storage for credential-bearing exports
 
-## Milestones
+## Release path
 
-- [x] M1 — domain model, SQLite schema, migrations, persistence
-- [x] M2 — source engine, subscription decoding/parsing, deduplication, SSRF safeguards
-- [x] M3 — API, jobs, event bus, WebSocket
-- [x] M4 — dashboard UI foundation
-- [x] M5 — bounded TCP connectivity testing
-- [x] M6 — deterministic 0–100 scoring model
-- [x] M7 — node catalog export and QR share target
-- [x] M8 — Tauri 2 Windows packaging/release workflow
+- [x] V3.0 — foundation, source engine, API, dashboard, TCP probe, scoring, safe catalog export, Tauri packaging
+- [x] V3.1 backend — unified measurement probes, bounded batch execution, history, Score 2.0 breakdown, secret store, Mihomo/Clash, sing-box and V2Ray/URI export
+- [ ] V3.1 frontend polish — gauges, history charts and ranking interactions
+- [ ] V3.2 — pluggable source/engine adapters
+- [ ] V4 — service mode / multi-user deployment
 
 ## Local development
 
@@ -30,20 +28,30 @@ cd frontend && npm install && npm run dev
 
 API defaults to `http://127.0.0.1:3000`; Vite proxies `/api` to it.
 
-For the desktop build:
+## Measurement API
 
-```bash
-cd src-tauri
-cargo tauri build
-```
+- `POST /api/v1/nodes/{id}/test` — bounded TCP probe
+- `POST /api/v1/nodes/test-batch` — bounded concurrent multi-probe run
+- `POST /api/v1/nodes/{id}/score` — recompute and persist Score 2.0
+- `GET /api/v1/nodes/{id}/history` — raw test history
+- `GET /api/v1/nodes/{id}/score-history` — score history
 
-The frontend CI pins TypeScript 5.9.3 with vue-tsc 3.3.11 to keep the Vue type-checking toolchain deterministic.
+## Secure export API
 
-## API
+- `PUT|DELETE /api/v1/nodes/{id}/secret` — OS-backed credential storage
+- `GET /api/v1/nodes/{id}/export/mihomo`
+- `GET /api/v1/nodes/{id}/export/clash`
+- `GET /api/v1/nodes/{id}/export/sing-box`
+- `GET /api/v1/nodes/{id}/export/v2ray`
+- `GET /api/v1/subscriptions/base64`
+- `GET /api/v1/subscriptions/uri`
+
+Secret material is generic JSON options and is never returned by the API. Credentials are kept outside ordinary node rows.
+
+## Core API
 
 - `GET /api/v1/health`
 - `GET /api/v1/nodes`
-- `POST /api/v1/nodes/{id}/test`
 - `GET|POST /api/v1/sources`
 - `POST /api/v1/sources/{id}/sync`
 - `POST /api/v1/jobs`
@@ -53,6 +61,6 @@ The frontend CI pins TypeScript 5.9.3 with vue-tsc 3.3.11 to keep the Vue type-c
 
 ## Security baseline
 
-Source fetching only permits HTTP(S), applies an explicit size limit, and blocks private/loopback/link-local destinations by default. Public/free nodes are untrusted and should never be used for sensitive traffic.
+Source fetching and measurement targets are restricted to HTTP(S), private/loopback/link-local targets are blocked by default, execution is bounded, download bodies are capped, redirects are constrained, and credentials are kept outside normal node rows and logs. Public/free nodes remain untrusted and should never be used for sensitive traffic.
 
-Proxy engines such as Mihomo, sing-box and Xray remain adapters for the next iteration; the core does not execute arbitrary proxy configurations.
+Protocol-aware proxy engines such as Mihomo, sing-box and Xray remain adapters. The canonical core model does not depend on an engine implementation.
