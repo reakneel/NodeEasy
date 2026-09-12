@@ -1,153 +1,121 @@
-# NodeEasy Architecture Freeze v1.1
+# NodeEasy Architecture Freeze v1.2
 
 ## 1. Product boundary
 
-NodeEasy is a **node data platform**, not a proxy client. Its core responsibilities are:
+NodeEasy is a **node data center**, not a proxy client. The product pipeline is:
 
 `collect -> decode -> detect -> parse -> normalize -> fingerprint -> deduplicate -> persist -> test -> score -> export -> share`
 
-The core does not own TUN, system proxy routing, traffic forwarding, or third-party proxy-engine authentication.
+NodeEasy owns node intelligence, measurement, ranking and distribution. It does not own TUN, system proxy routing, traffic forwarding or third-party engine authentication.
 
 ## 2. Runtime architecture
 
-NodeEasy is a modular monolith. The desktop application contains independently bounded modules:
+NodeEasy is a modular monolith with stable internal boundaries:
 
-- `core`: domain models, errors, fingerprints and scoring primitives
+- `core`: canonical domain model, validation, fingerprinting and scoring primitives
 - `sources`: public/authorized source collection and decoding
 - `storage`: SQLite repositories and migrations
-- `testing`: bounded network probes
-- `scoring`: deterministic quality scoring
-- `export`: safe catalog export and QR sharing in V3.0
+- `testing`: bounded, cancellable network probes
+- `scoring`: deterministic quality scoring and explanations
+- `secrets`: OS-backed credential storage
+- `export`: protocol-specific configuration/subscription adapters
 - `api`: Axum HTTP + WebSocket API
-- `app`: Tauri application lifecycle
+- `app`: Tauri lifecycle and desktop integration
 
-Future services can be extracted by module boundary without changing the canonical domain model.
+The module boundaries are intentionally extraction-friendly for future service mode.
 
 ## 3. Technology
 
-### Backend
-
-- Rust stable
-- Tokio
-- Axum
-- Reqwest
-- Serde
-- SQLx
-- SQLite
-- tracing
-
-### Frontend
-
-- Vue 3
-- Vite
-- TypeScript
-- Tailwind CSS
-- shadcn-vue direction
-- Lucide direction
-- ECharts direction
-
-### Desktop
-
-- Tauri 2
+- Rust stable / Tokio / Axum / Reqwest / Serde / SQLx / tracing
+- SQLite first; schema remains PostgreSQL-compatible in principle
+- Tauri 2 desktop shell
+- Vue 3 + Vite + TypeScript + Tailwind CSS
 
 ## 4. Canonical node model
 
-Supported protocols initially include:
+The canonical protocol enum supports Shadowsocks, Shadowsocks2022, VMess, VLESS, Trojan, Hysteria, Hysteria2, TUIC, WireGuard, SOCKS5, HTTP(S) and AnyTLS.
 
-- Shadowsocks / Shadowsocks2022
-- VMess
-- VLESS
-- Trojan
-- Hysteria / Hysteria2
-- TUIC
-- WireGuard
-- SOCKS5
-- HTTP(S)
-- AnyTLS
+A fingerprint is derived from canonical identity fields rather than display names. Source membership is separate from node identity so the same node may arrive from multiple sources.
 
-A node fingerprint is derived from canonical identity fields, not display names. Source relationships are stored separately so the same node can belong to multiple sources.
+Secrets are never part of the canonical `Node` record. Credential material is referenced through the secrets boundary.
 
-## 5. Data model
+## 5. Measurement architecture
 
-Core tables include:
+All probes implement the same lifecycle concept:
 
-- `sources`
-- `source_runs`
-- `nodes`
-- `node_sources`
-- `node_tests`
-- `jobs`
+`prepare -> bounded attempt(s) -> observation -> persist -> aggregate -> score`
 
-SQLite is the first storage engine. SQLx migrations and repository boundaries keep a future PostgreSQL migration feasible.
+Probe requirements:
 
-## 6. Source engine
+- explicit timeout/deadline
+- cancellation support
+- bounded concurrency for batches
+- no arbitrary redirect into localhost/private networks
+- capped response/body size
+- controlled measurement targets
+- structured errors without secrets
 
-The source pipeline is intentionally staged:
-
-`fetch -> size/SSRF validation -> decode -> detect -> parse -> normalize -> fingerprint -> deduplicate -> persist`
-
-The initial remote source is HTTP(S). Only public or explicitly authorized sources are supported. Source fetching must protect against SSRF, enforce size limits, and avoid logging credentials, subscription tokens or private keys.
-
-## 7. Testing model
-
-V3.0 implements the first bounded TCP connectivity probe. The model is intentionally extensible toward:
+Probe types:
 
 1. TCP reachability
 2. TLS handshake
 3. HTTP request
-4. latency
+4. latency samples
 5. download throughput
 6. repeated stability
 
-A successful connectivity check is not equivalent to a stable or high-quality node.
+An endpoint probe measures reachability/transport quality; protocol-aware proxy traffic remains an adapter concern.
 
-## 8. API contract
+## 6. Scoring architecture
 
-V3.0 exposes:
+Score 2.0 consumes raw observations rather than a single test result. Components are independently explainable:
 
-- `GET /api/v1/health`
-- `GET /api/v1/nodes`
-- `POST /api/v1/nodes/{id}/test`
-- `GET|POST /api/v1/sources`
-- `POST /api/v1/sources/{id}/sync`
-- `POST /api/v1/jobs`
-- `GET /api/v1/export/nodes.json`
-- `GET /api/v1/nodes/{id}/qr`
-- `GET /api/v1/ws`
+- availability
+- latency
+- download throughput
+- stability
+- freshness
 
-The frontend consumes this API rather than accessing storage directly.
+The API exposes both the aggregate score and component breakdown so the dashboard can explain rankings.
 
-## 9. Export and secret boundary
+## 7. Secret boundary and exporters
 
-V3.0 deliberately avoids credential-bearing generated proxy configurations. Node catalog JSON and QR share targets do not expose private keys or subscription credentials.
+Credential-bearing configuration is generated only through the secret store. Secrets use an OS-backed credential provider where available and are never written into ordinary node rows or logs.
 
-Mihomo/Clash, sing-box and V2Ray/URI exporters belong to V3.1 and must be implemented behind a deliberate secret-management boundary. Secrets should not be stored in ordinary node records or emitted into logs.
+Exporters are adapters:
 
-Proxy engines remain optional adapters and must not become dependencies of the canonical core model.
+- Mihomo/Clash
+- sing-box
+- V2Ray/URI
 
-## 10. UI direction
+They consume the canonical node plus secret material and return generated configuration. Engine-specific structures must not leak back into `core`.
 
-The dashboard replaces the old WinForms table as the primary experience:
+## 8. Source security
 
-- overview cards for node count, healthy count and quality metrics
-- node table for dense operational data
-- realtime WebSocket event updates
-- source/test/export operations exposed through the API
+Remote source fetching is HTTP(S)-only by default and applies SSRF filtering, size limits and bounded execution. Public/free nodes are untrusted. Source content, node metadata and credentials are treated as hostile input.
 
-More advanced gauges, time-series charts and operational pages are planned as the measurement system matures.
+## 9. API and realtime model
 
-## 11. Security baseline
+The frontend consumes the API rather than storage directly. Long-running source sync and batch testing publish lifecycle events through EventBus/WebSocket.
 
-- HTTP/HTTPS only for remote source fetching by default
-- block localhost, loopback, private, link-local and other internal destinations unless explicitly enabled
-- enforce source size/rate limits
-- do not expose engine controllers by default
-- never persist or log secrets unnecessarily
-- treat public/free nodes as untrusted and unsuitable for sensitive traffic
-- isolate optional proxy engines from the core API
+Core API groups are:
+
+- health and nodes
+- source ingestion/sync
+- jobs and realtime events
+- measurement/test history
+- score explanations
+- secret references
+- exports/subscriptions
+
+## 10. Desktop boundary
+
+Tauri starts the local API on loopback and serves the Vite frontend. The desktop shell does not become the domain layer. This keeps the backend independently testable and allows a later service deployment.
+
+## 11. Extensibility policy
+
+New platforms, protocols or proxy engines must be adapters. Scheduler, Worker, storage and dashboard logic consume canonical Node/Test/Score/Event contracts and must not branch on engine-specific types.
 
 ## 12. Delivery policy
 
-V3.0 is the **architecture and local-first foundation release**. Later milestones may extend interfaces, but must not silently change the product boundary or canonical model.
-
-The next major work should add measurement depth and secure export before introducing multi-user/service complexity.
+V3.0 is the local-first foundation. V3.1 completes measurement depth, explainable scoring, secret storage and protocol exporters. V3.2 expands sources/protocols/engine adapters. Service mode is deferred until the desktop workflow is stable.
