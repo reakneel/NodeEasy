@@ -14,42 +14,40 @@
 - [x] M7 safe catalog JSON + QR deep links
 - [x] M8 Tauri 2 Windows release workflow
 
-V3.0 deliberately did not persist or export credentials and did not pretend TCP reachability was a complete proxy-quality measurement.
-
 ## V3.1 — Measurement + Secure Export
 
-**Status: implementation target.**
+**Status: complete.**
 
 ### Measurement
 
-- [ ] unified Probe interface
-- [ ] TCP probe refactor
-- [ ] TLS handshake probe
-- [ ] HTTP probe
-- [ ] repeated latency sampling
-- [ ] controlled download throughput
-- [ ] repeated stability/reconnect checks
-- [ ] cancellation and bounded batch execution
-- [ ] raw observation/history persistence
-- [ ] status-history aggregation
+- [x] unified cancellable Probe interface
+- [x] TCP probe refactor
+- [x] TLS HTTPS handshake probe
+- [x] HTTP probe
+- [x] repeated latency sampling
+- [x] controlled download throughput with HTTPS target validation and body cap
+- [x] repeated stability observations
+- [x] cancellation and bounded batch execution
+- [x] raw test/history persistence
+- [x] score history persistence
 
 ### Scoring and dashboard
 
-- [ ] Score 2.0 component model
-- [ ] explainable score breakdown API
-- [ ] measurement history API
-- [ ] realtime batch progress
-- [ ] dashboard gauges/time-series/ranking views
+- [x] Score 2.0 component model
+- [x] explainable score breakdown API
+- [x] measurement history API
+- [x] realtime batch progress events
+- [x] dashboard score breakdown and history panel
 
 ### Security and distribution
 
-- [ ] OS-backed secret store
-- [ ] secret references separate from Node
-- [ ] Mihomo/Clash exporter
-- [ ] sing-box exporter
-- [ ] V2Ray/URI exporter
-- [ ] generated subscription views
-- [ ] export tests that prove secrets are not logged or persisted in node rows
+- [x] OS-backed secret store
+- [x] secrets separated from Node records
+- [x] Mihomo/Clash exporter
+- [x] sing-box exporter
+- [x] V2Ray/URI exporter
+- [x] generated URI/base64 subscription views
+- [x] DNS-aware measurement SSRF guard
 
 ## V3.2 — Source and Engine Expansion
 
